@@ -1,222 +1,172 @@
 import React, { useEffect, useState } from "react";
 import Layout from "./components/Layout.jsx";
 import Home from "./components/Home.jsx";
-import Modal from "./components/Modal.jsx";
 import Checkout from "./components/Checkout.jsx";
 import Admin from "./components/Admin.jsx";
 import Classroom from "./components/Classroom.jsx";
 import Login from "./components/Login.jsx";
-import {
-  Receipt,
-  Reject,
-  Mail,
-  Activate,
-  OrderStatus,
-} from "./components/OrderDialogs.jsx";
-import { loadState, persistState, hashPassword } from "./storage.js";
-
+import { CourseDetail, MyCourses, Activation } from "./components/Pages.jsx";
+import { api } from "./api.js";
+import { defaultCourses } from "./catalog.js";
+import { whatsappFor } from "./config.js";
 export default function App() {
-  const [state, setState] = useState(loadState),
-    [route, setRoute] = useState(() => location.hash.slice(1) || "home"),
-    [modal, setModal] = useState(null),
-    [message, setMessage] = useState(""),
-    [preview, setPreview] = useState(false),
-    [session, setSession] = useState(null);
-  const current = state.orders.find((o) => o.id === state.current),
-    sessionOrder = state.orders.find((o) => o.id === session),
-    modalOrder = state.orders.find((o) => o.id === modal?.id);
+  const [route, setRoute] = useState(() => location.hash.slice(1) || "home");
+  const [catalog, setCatalog] = useState(defaultCourses),
+    [payment, setPayment] = useState({});
+  const [user, setUser] = useState(null),
+    [ready, setReady] = useState(false),
+    [message, setMessage] = useState("");
+  const [catalogError, setCatalogError] = useState("");
+  const [demo, setDemo] = useState(false);
+  function navigate(to) {
+    location.hash = to;
+  }
   useEffect(() => {
     const handler = () => setRoute(location.hash.slice(1) || "home");
-    window.addEventListener("hashchange", handler);
-    return () => window.removeEventListener("hashchange", handler);
+    addEventListener("hashchange", handler);
+    api("catalog")
+      .then((data) => {
+        if (data.courses.length) setCatalog(data.courses);
+        setPayment(data.payment);
+        setDemo(Boolean(data.demo));
+      })
+      .catch((e) => setCatalogError(e.message));
+    api("me")
+      .then((data) => setUser(data.user))
+      .catch(() => {})
+      .finally(() => setReady(true));
+    return () => removeEventListener("hashchange", handler);
   }, []);
   useEffect(() => {
-    if (["courses", "program", "faq"].includes(route)) {
-      const id = requestAnimationFrame(() =>
+    if (["courses", "program", "faq"].includes(route))
+      requestAnimationFrame(() =>
         document.getElementById(route)?.scrollIntoView(),
       );
-      return () => cancelAnimationFrame(id);
-    }
-    window.scrollTo(0, 0);
+    else window.scrollTo(0, 0);
   }, [route]);
   useEffect(() => {
     if (!message) return;
-    const timer = setTimeout(() => setMessage(""), 4200);
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setMessage(""), 6500);
+    return () => clearTimeout(t);
   }, [message]);
-  function navigate(to) {
-    setRoute(to);
-    location.hash = to;
+  async function login(email, password) {
+    const data = await api("login", { email, password });
+    setUser(data.user);
+    navigate(
+      data.user.role === "admin"
+        ? "admin"
+        : route.startsWith("aula/")
+          ? route
+          : "mis-cursos",
+    );
   }
-  function commit(next) {
+  async function logout() {
     try {
-      persistState(next);
-      setState(next);
-      return true;
-    } catch {
-      setMessage(
-        "No se pudo guardar. El almacenamiento está lleno o bloqueado; probá con un archivo más pequeño.",
-      );
-      return false;
+      await api("logout", {});
+      setUser(null);
+      navigate("home");
+    } catch (e) {
+      setMessage(e.message);
     }
   }
-  function updateOrder(id, patch) {
-    return commit({
-      ...state,
-      orders: state.orders.map((o) => (o.id === id ? { ...o, ...patch } : o)),
-    });
-  }
-  function open(type, o) {
-    setModal({ type, id: o?.id });
-  }
-  function previewClass() {
-    setPreview(true);
-    navigate("class");
-  }
-  function buy() {
-    open("checkout");
-  }
-  function approve(o) {
-    if (o.status === "pending" && updateOrder(o.id, { status: "approved" }))
-      setMessage("Inscripción aprobada. Correo de acceso simulado disponible.");
-  }
-  function enter(o) {
-    setSession(o.id);
-    setPreview(false);
-    setModal(null);
-    navigate("class");
-  }
-  async function login(email, password) {
-    const hash = await hashPassword(password);
-    const found = state.orders.find(
-      (o) =>
-        o.email === email.trim().toLowerCase() &&
-        o.status === "approved" &&
-        o.activated &&
-        o.password === hash,
-    );
-    if (!found)
-      throw new Error(
-        "Acceso no disponible. Verificá tus datos y la aprobación de tu inscripción.",
-      );
-    enter(found);
-  }
-  const progressKey = preview ? "preview" : sessionOrder?.id;
+  const [kind, id] = route.split("/"),
+    course = catalog.find((c) => c.id === id);
   let page;
-  if (route === "admin")
+  if (kind === "curso" || kind === "comprar")
+    page = course ? (
+      kind === "curso" ? (
+        <CourseDetail course={course} navigate={navigate} />
+      ) : (
+        <section className="purchasepage">
+          <Checkout
+            key={course.id}
+            course={course}
+            payment={payment}
+            onSubmitted={() => navigate("enviado")}
+          />
+        </section>
+      )
+    ) : (
+      <section>
+        <h2>Curso no encontrado</h2>
+        <a href="#courses">Volver al catálogo ↗</a>
+      </section>
+    );
+  else if (kind === "activar")
+    page = <Activation token={id} navigate={navigate} />;
+  else if (kind === "enviado")
     page = (
-      <Admin
-        orders={state.orders}
-        onReceipt={(o) => open("receipt", o)}
-        onApprove={approve}
-        onReject={(o) => open("reject", o)}
-        onMail={(o) => open("mail", o)}
+      <section className="confirmation">
+        <div className="eyebrow">Comprobante recibido</div>
+        <h2>
+          Tu próximo paso
+          <br />
+          ya está en marcha.
+        </h2>
+        <p>
+          Vamos a revisar el pago. Cuando se apruebe, te llegará un email para
+          activar el acceso al curso. Revisá también la carpeta de spam.
+        </p>
+        <a
+          className="btn"
+          href={whatsappFor()}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Hablar con Chéverry ↗
+        </a>
+        <a className="outline" href="#courses">
+          Ver los cursos
+        </a>
+      </section>
+    );
+  else if (["login", "admin", "mis-cursos", "aula"].includes(kind)) {
+    if (!ready) page = <section role="status">Cargando tu cuenta…</section>;
+    else if (kind === "aula" && demo && id === "papeleria-automotor") page = <Classroom key={id} courseId={id} name={user?.name || "Visitante"} notify={setMessage} />;
+    else if (!user) page = <Login onLogin={login} admin={kind === "admin"} />;
+    else if (kind === "admin")
+      page =
+        user.role === "admin" ? (
+          <Admin notify={setMessage} />
+        ) : (
+          <section>
+            <h2>Acceso restringido</h2>
+            <p>Esta sección es exclusiva del administrador.</p>
+            <a href="#mis-cursos">Ir a mis cursos ↗</a>
+          </section>
+        );
+    else if (kind === "aula")
+      page = (
+        <Classroom
+          key={id}
+          courseId={id}
+          name={user.name}
+          notify={setMessage}
+        />
+      );
+    else page = <MyCourses name={user.name} />;
+  } else
+    page = (
+      <Home
+        courses={catalog}
+        onBuy={() => navigate("curso/papeleria-automotor")}
+        onPreview={() => navigate("curso/papeleria-automotor")}
       />
     );
-  else if (route === "status")
-    page = (
-      <OrderStatus
-        order={current}
-        onBuy={buy}
-        onMail={(o) => open("mail", o)}
-        navigate={navigate}
-      />
-    );
-  else if (
-    route === "class" &&
-    (preview || sessionOrder?.status === "approved")
-  )
-    page = (
-      <Classroom
-        key={progressKey}
-        preview={preview}
-        name={sessionOrder?.name}
-        progress={state.progress[progressKey] || { done: [], checks: [] }}
-        onProgress={(value) =>
-          commit({
-            ...state,
-            progress: { ...state.progress, [progressKey]: value },
-          })
-        }
-        notify={setMessage}
-      />
-    );
-  else if (route === "login" || route === "class")
-    page = <Login onLogin={login} onPreview={previewClass} />;
-  else page = <Home onBuy={buy} onPreview={previewClass} />;
   return (
-    <>
-      <Layout navigate={navigate} preview={previewClass}>
-        {page}
-      </Layout>
-      {modal && (
-        <Modal key={modal.type} onClose={() => setModal(null)}>
-          {modal.type === "checkout" && (
-            <Checkout
-              onSubmit={(order) => {
-                if (
-                  !commit({
-                    ...state,
-                    orders: [...state.orders, order],
-                    current: order.id,
-                  })
-                )
-                  throw new Error(
-                    "No se pudo guardar la inscripción. Probá con un archivo más pequeño.",
-                  );
-                setPreview(false);
-                setModal(null);
-                navigate("status");
-              }}
-            />
-          )}
-          {modalOrder && modal.type === "receipt" && (
-            <Receipt order={modalOrder} />
-          )}
-          {modalOrder && modal.type === "reject" && (
-            <Reject
-              onSubmit={(reason) => {
-                if (
-                  updateOrder(modalOrder.id, { status: "rejected", reason })
-                ) {
-                  setModal(null);
-                  setMessage("Comprobante rechazado con motivo.");
-                }
-              }}
-            />
-          )}
-          {modalOrder && modal.type === "mail" && (
-            <Mail
-              order={modalOrder}
-              onActivate={() => {
-                if (modalOrder.activated) enter(modalOrder);
-                else open("activate", modalOrder);
-              }}
-            />
-          )}
-          {modalOrder && modal.type === "activate" && (
-            <Activate
-              order={modalOrder}
-              onSubmit={async (password) => {
-                const hash = await hashPassword(password);
-                if (
-                  !updateOrder(modalOrder.id, {
-                    password: hash,
-                    activated: true,
-                  })
-                )
-                  throw new Error("No se pudo guardar el acceso.");
-                enter(modalOrder);
-              }}
-            />
-          )}
-        </Modal>
+    <Layout navigate={navigate} user={user} onLogout={logout}>
+      {catalogError && (
+        <div className="serviceerror" role="alert">
+          El catálogo no está disponible en este momento. Podés consultarnos por
+          WhatsApp.
+        </div>
       )}
+      {page}
       {message && (
         <div id="toast" role="status" style={{ display: "block" }}>
           {message}
         </div>
       )}
-    </>
+    </Layout>
   );
 }

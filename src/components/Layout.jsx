@@ -5,7 +5,7 @@ function Brand() {
     <a className="brand" href="#home">
       <span className="brand-logo">
         <img
-          src="assets/cheverry-logo-original.webp"
+          src="/assets/cheverry-logo-original.webp"
           alt="Cheverry Automotores"
         />
       </span>
@@ -15,14 +15,12 @@ function Brand() {
     </a>
   );
 }
-export default function Layout({ children, navigate, preview }) {
+export default function Layout({ children, navigate, user, onLogout }) {
   return (
     <>
       <div className="demo">
-        DEMO INTERACTIVA <span>Conocé la experiencia</span>
-        <button onClick={() => navigate("home")}>Página de venta</button>
-        <button onClick={preview}>Aula del alumno</button>
-        <button onClick={() => navigate("admin")}>Panel administrador ↗</button>
+        ACADEMIA CHÉVERRY <span>Formación para tu próximo paso.</span>
+        {user && <button onClick={onLogout}>Cerrar sesión</button>}
       </div>
       <header>
         <Brand />
@@ -31,7 +29,7 @@ export default function Layout({ children, navigate, preview }) {
           <a href="#program">Qué vas a aprender</a>
           <a href="#faq">Preguntas frecuentes</a>
         </nav>
-        <button className="outline" onClick={() => navigate("login")}>
+        <button className="outline" onClick={() => navigate("mis-cursos")}>
           Mi aula <span>↗</span>
         </button>
       </header>
@@ -47,13 +45,16 @@ export default function Layout({ children, navigate, preview }) {
             WhatsApp · +54 9 11 6556-2728 ↗
           </a>
         </div>
-        <small>© 2026 Cheverry · Demo de presentación</small>
+        <a className="textlink" href="#admin">
+          Administración ↗
+        </a>
+        <small>© 2026 Chéverry · Academia automotriz</small>
       </footer>
       <div className="mobilebar" aria-label="Accesos rápidos">
         <a href="#courses">
           <span>▤</span>Cursos
         </a>
-        <button onClick={() => navigate("login")}>
+        <button onClick={() => navigate("mis-cursos")}>
           <span>↗</span>Mi aula
         </button>
         <a

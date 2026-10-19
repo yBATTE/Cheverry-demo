@@ -1,0 +1,18 @@
+import { createServer } from "node:http";
+import { createServer as createVite } from "vite";
+import handler from "../api/index.js";
+const vite = await createVite({
+  server: { middlewareMode: true },
+  appType: "spa",
+});
+createServer((req, res) => {
+  if (req.url.split("?")[0] === "/api") return handler(req, res);
+  // Private server source is never served by Vite.
+  if (/^\/(private|server|api)(\/|$)/.test(req.url)) {
+    res.statusCode = 404;
+    return res.end();
+  }
+  vite.middlewares(req, res);
+}).listen(8, "0.0.0.0", () =>
+  console.log("Chéverry: http://localhost:5178"),
+);
